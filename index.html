@@ -259,7 +259,7 @@ const RPE_SHORT={5:'Locker',6:'Leicht',7:'Mittel',8:'Hart',9:'Sehr hart',10:'Max
 const RPE_COLORS={5:'#5fcf8c',6:'#8fd16a',7:'#d9c24a',8:'#f0a33a',9:'#f0602a',10:'#e35353'};
 
 let S=load();
-function blank(){return {version:1,exercises:DEFAULT_EXERCISES.map(e=>({id:e[0],name:e[1],en:e[2],type:e[3],group:e[4]})),workouts:[],active:null,settings:{rest:90,step:1.25,name:'',demo:false,welcomed:false,sound:true,awake:true}};}
+function blank(){return {version:1,exercises:DEFAULT_EXERCISES.map(e=>({id:e[0],name:e[1],en:e[2],type:e[3],group:e[4]})),workouts:[],active:null,settings:{rest:90,step:1.25,name:'',demo:false,welcomed:false,sound:true,soundId:'beep',awake:true}};}
 function load(){try{const r=localStorage.getItem(KEY);if(r){const s=JSON.parse(r);return Object.assign(blank(),s,{settings:Object.assign(blank().settings,s.settings||{})});}}catch(e){}return blank();}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Speichern nicht möglich (Browser-Speicher blockiert)');}}
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
@@ -482,9 +482,29 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 let actx=null;
 function unlockAudio(){try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();
   if(navigator.audioSession&&navigator.audioSession.type!=='transient')navigator.audioSession.type='transient';}catch(e){}}
-function playBeep(){if(S.settings.sound===false)return;if(navigator.vibrate)navigator.vibrate([200,100,200,100,400]);
-  try{unlockAudio();if(!actx)return;const t0=actx.currentTime;const notes=[[880,0,.12],[880,.18,.12],[880,.36,.12],[1175,.6,.35]];
-    for(const [f,at,dur] of notes){const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(0,t0+at);g.gain.linearRampToValueAtTime(.25,t0+at+.01);g.gain.setValueAtTime(.25,t0+at+dur-.03);g.gain.linearRampToValueAtTime(0,t0+at+dur);o.connect(g).connect(actx.destination);o.start(t0+at);o.stop(t0+at+dur+.02);}}catch(e){}}
+const SOUNDS=[
+ {id:'beep',   name:'Piepser',       desc:'Drei kurze Töne, ein hoher Abschluss'},
+ {id:'bell',   name:'Ringglocke',    desc:'Wie am Boxring'},
+ {id:'ding',   name:'Ding',          desc:'Heller Einzelton, dreimal'},
+ {id:'buzzer', name:'Buzzer',        desc:'Tiefer Summer wie in der Halle'},
+ {id:'whistle',name:'Trillerpfeife', desc:'Kurz und durchdringend'},
+ {id:'arcade', name:'Arcade',        desc:'Aufsteigende Tonfolge'},
+ {id:'siren',  name:'Sirene',        desc:'Zwei Wechseltöne'},
+];
+function tone(t0,{f,at=0,dur=.2,type='sine',vol=.25,f2=null,decay=false}){const o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.setValueAtTime(f,t0+at);if(f2!=null)o.frequency.exponentialRampToValueAtTime(f2,t0+at+dur);
+  g.gain.setValueAtTime(0,t0+at);g.gain.linearRampToValueAtTime(vol,t0+at+.01);if(decay)g.gain.exponentialRampToValueAtTime(.001,t0+at+dur);else{g.gain.setValueAtTime(vol,t0+at+dur-.03);g.gain.linearRampToValueAtTime(0,t0+at+dur);}
+  o.connect(g).connect(actx.destination);o.start(t0+at);o.stop(t0+at+dur+.05);}
+function playSound(id){try{unlockAudio();if(!actx)return;const t0=actx.currentTime;
+  switch(id){
+    case 'bell': for(const at of [0,.7]){tone(t0,{f:1046,at,dur:1.1,vol:.3,decay:true});tone(t0,{f:1046*2.76,at,dur:.5,vol:.12,decay:true});tone(t0,{f:1046*5.4,at,dur:.25,vol:.06,decay:true});} break;
+    case 'ding': for(const at of [0,.35,.7])tone(t0,{f:1760,at,dur:.5,vol:.3,decay:true}); break;
+    case 'buzzer': tone(t0,{f:140,dur:.7,type:'sawtooth',vol:.22});tone(t0,{f:141.5,dur:.7,type:'square',vol:.08}); break;
+    case 'whistle': for(const at of [0,.3]){tone(t0,{f:2600,at,dur:.22,vol:.22});tone(t0,{f:2635,at,dur:.22,vol:.1});} break;
+    case 'arcade': [523,659,784,1047].forEach((f,i)=>tone(t0,{f,at:i*.11,dur:.1,type:'square',vol:.18}));tone(t0,{f:1319,at:.46,dur:.4,type:'square',vol:.2,decay:true}); break;
+    case 'siren': [0,.4,.8].forEach(at=>{tone(t0,{f:700,at,dur:.2,type:'triangle',vol:.3});tone(t0,{f:1000,at:at+.2,dur:.2,type:'triangle',vol:.3});}); break;
+    default: [[880,0,.12],[880,.18,.12],[880,.36,.12],[1175,.6,.35]].forEach(([f,at,dur])=>tone(t0,{f,at,dur,type:'square',vol:.25}));
+  }}catch(e){}}
+function playBeep(){if(S.settings.sound===false)return;if(navigator.vibrate)navigator.vibrate([200,100,200,100,400]);playSound(S.settings.soundId||'beep');}
 
 /* Bildschirm wach halten, solange ein Training läuft */
 let wakeLock=null;
@@ -624,7 +644,8 @@ function renderMore(){
    <section class="card stack"><h3>Einstellungen</h3>
      <div class="field"><label for="s-name">Dein Name (optional)</label><input class="input" id="s-name" value="${esc(S.settings.name)}" placeholder="z. B. Jonas" autocomplete="off"></div>
      <div class="field"><label>Pause zwischen Sätzen</label><div class="seg" id="s-rest">${[0,60,90,120,180].map(v=>`<button data-v="${v}" class="${S.settings.rest===v?'on':''}">${v?v+' s':'aus'}</button>`).join('')}</div></div>
-     <div class="field"><label>Ton am Ende der Pause</label><div class="seg" id="s-sound"><button data-v="1" class="${S.settings.sound!==false?'on':''}">An</button><button data-v="0" class="${S.settings.sound===false?'on':''}">Aus</button></div><button class="btn sm ghost" id="s-testsound" style="align-self:flex-start">Ton testen</button></div>
+     <div class="field"><label>Ton am Ende der Pause</label><div class="seg" id="s-sound"><button data-v="1" class="${S.settings.sound!==false?'on':''}">An</button><button data-v="0" class="${S.settings.sound===false?'on':''}">Aus</button></div>
+       <div class="list" id="s-sounds" style="margin-top:4px">${SOUNDS.map(x=>`<div class="it" style="padding:9px 0"><button data-pickSound="${x.id}" style="flex:1;text-align:left;display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:50%;border:2px solid ${(S.settings.soundId||'beep')===x.id?'var(--accent)':'var(--line)'};display:inline-flex;align-items:center;justify-content:center;flex:none">${(S.settings.soundId||'beep')===x.id?'<span style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></span>':''}</span><span><span style="font-weight:600">${x.name}</span><br><span class="small muted">${x.desc}</span></span></button><button class="btn sm ghost" data-playSound="${x.id}" aria-label="${x.name} anhören">▶</button></div>`).join('')}</div></div>
      <div class="field"><label>Bildschirm während des Trainings anlassen</label><div class="seg" id="s-awake"><button data-v="1" class="${S.settings.awake!==false?'on':''}">An</button><button data-v="0" class="${S.settings.awake===false?'on':''}">Aus</button></div><div class="small muted">Ein gesperrtes Handy kann keinen Timer-Ton abspielen. Deshalb bleibt der Bildschirm an, solange ein Training läuft. Wird das Handy trotzdem gesperrt, rechnet der Timer beim Entsperren die Restzeit nach.</div></div>
      <div class="field"><label>Gewichtsschritt</label><div class="seg" id="s-step">${[1.25,2.5].map(v=>`<button data-v="${v}" class="${S.settings.step===v?'on':''}">± ${v.toLocaleString('de-DE')} kg</button>`).join('')}</div></div></section>
    <section class="card stack"><div class="row between"><h3>Übungen</h3><button class="btn sm" id="newex">+ Neue Übung</button></div>
@@ -643,7 +664,8 @@ function renderMore(){
   $('#s-rest').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.rest=+b.dataset.v;save();renderMore();}));
   $('#s-step').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.step=+b.dataset.v;save();renderMore();}));
   $('#s-sound').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.sound=b.dataset.v==='1';save();renderMore();}));
-  $('#s-testsound').addEventListener('click',()=>{unlockAudio();setTimeout(playBeep,50);});
+  main.querySelectorAll('[data-playSound]').forEach(b=>b.addEventListener('click',()=>{unlockAudio();playSound(b.dataset.playsound);}));
+  main.querySelectorAll('[data-pickSound]').forEach(b=>b.addEventListener('click',()=>{S.settings.soundId=b.dataset.picksound;S.settings.sound=true;save();unlockAudio();playSound(S.settings.soundId);renderMore();}));
   $('#s-awake').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.awake=b.dataset.v==='1';save();if(!S.settings.awake)releaseWake();renderMore();}));
   $('#newex').addEventListener('click',()=>newExerciseSheet('',()=>renderMore()));
   main.querySelectorAll('[data-delex]').forEach(b=>b.addEventListener('click',()=>{const e=ex(b.dataset.delex);const used=S.workouts.some(w=>w.entries.some(en=>en.exId===e.id));confirmSheet('Übung löschen?',used?e.name+' kommt in gespeicherten Trainings vor und wird dort als „Unbekannt" angezeigt.':e.name+' wird aus der Liste entfernt.','Löschen',()=>{S.exercises=S.exercises.filter(x=>x.id!==e.id);save();renderMore();});}));
