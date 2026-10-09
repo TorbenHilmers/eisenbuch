@@ -259,7 +259,7 @@ const RPE_SHORT={5:'Locker',6:'Leicht',7:'Mittel',8:'Hart',9:'Sehr hart',10:'Max
 const RPE_COLORS={5:'#5fcf8c',6:'#8fd16a',7:'#d9c24a',8:'#f0a33a',9:'#f0602a',10:'#e35353'};
 
 let S=load();
-function blank(){return {version:1,exercises:DEFAULT_EXERCISES.map(e=>({id:e[0],name:e[1],en:e[2],type:e[3],group:e[4]})),workouts:[],active:null,settings:{rest:90,step:1.25,name:'',demo:false,welcomed:false}};}
+function blank(){return {version:1,exercises:DEFAULT_EXERCISES.map(e=>({id:e[0],name:e[1],en:e[2],type:e[3],group:e[4]})),workouts:[],active:null,settings:{rest:90,step:1.25,name:'',demo:false,welcomed:false,sound:true,awake:true}};}
 function load(){try{const r=localStorage.getItem(KEY);if(r){const s=JSON.parse(r);return Object.assign(blank(),s,{settings:Object.assign(blank().settings,s.settings||{})});}}catch(e){}return blank();}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('Speichern nicht möglich (Browser-Speicher blockiert)');}}
 const uid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3);
@@ -344,7 +344,7 @@ function renderTrain(){
   main.querySelectorAll('.emo').forEach(b=>b.addEventListener('click',()=>{S.draft=S.draft||{};S.draft[b.dataset.k]=+b.dataset.v;save();renderTrain();}));
   $('#start').addEventListener('click',()=>{
     S.active={id:uid(),date:todayStr(),start:Date.now(),end:null,checkin:Object.assign({},S.draft||{}),note:'',entries:[]};
-    S.draft=null;save();renderActive();
+    S.draft=null;save();unlockAudio();keepAwake();renderActive();
     if(!S.active.entries.length)pickExercise();
   });
 }
@@ -371,13 +371,13 @@ function renderActive(){
    <div class="grid2"><button class="btn ghost danger" id="abort">Abbrechen</button><button class="btn primary" id="finish" ${sets?'':'disabled'}>Beenden</button></div>`;
   $('#addex').addEventListener('click',pickExercise);
   $('#note').addEventListener('input',e=>{w.note=e.target.value;save();});
-  $('#abort').addEventListener('click',()=>confirmSheet('Training abbrechen?','Alle Sätze dieses Trainings werden verworfen.','Verwerfen',()=>{S.active=null;stopRest();save();render();}));
+  $('#abort').addEventListener('click',()=>confirmSheet('Training abbrechen?','Alle Sätze dieses Trainings werden verworfen.','Verwerfen',()=>{S.active=null;stopRest();releaseWake();save();render();}));
   $('#finish').addEventListener('click',finishWorkout);
   $('#ci-edit').addEventListener('click',()=>checkinSheet(w));
   main.querySelectorAll('[data-addset]').forEach(b=>b.addEventListener('click',()=>editSet(+b.dataset.addset,null)));
   main.querySelectorAll('[data-editset]').forEach(b=>b.addEventListener('click',()=>{const [i,j]=b.dataset.editset.split(',').map(Number);editSet(i,j);}));
   main.querySelectorAll('[data-removeex]').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.removeex;confirmSheet('Übung entfernen?',ex(w.entries[i].exId).name+' aus diesem Training entfernen.','Entfernen',()=>{w.entries.splice(i,1);save();renderActive();});}));
-  tickDuration();
+  tickDuration(); if(!restTimer)resumeRest(); if(!wakeLock)keepAwake();
 }
 let durT=null;
 function tickDuration(){clearInterval(durT);durT=setInterval(()=>{const d=$('#dur');if(!d||!S.active||S.active._reopened){clearInterval(durT);return;}d.textContent=elapsed(S.active.start);},10000);}
@@ -446,7 +446,7 @@ function editSet(i,j){
       if(e.type!=='t'&&!s.reps){toast('Wie viele Wiederholungen?');return;} if(e.type==='t'&&!s.secs){toast('Wie viele Sekunden?');return;}
       const wasNew=j==null; if(wasNew)en.sets.push(s);else en.sets[j]=s;
       save();closeSheet();renderActive();
-      if(wasNew){if(isPR(en.exId,s,w))toast('🔥 Neuer persönlicher Rekord!');startRest();}
+      if(wasNew){if(isPR(en.exId,s,w))toast('🔥 Neuer persönlicher Rekord!');startRest();}else{unlockAudio();}
     });
     const del=root.querySelector('#del');if(del)del.addEventListener('click',()=>{en.sets.splice(j,1);save();closeSheet();renderActive();});
   });
@@ -456,19 +456,40 @@ function confirmSheet(title,text,okLabel,onOk,danger=true){sheet(`<h2>${esc(titl
 function finishWorkout(){
   const w=S.active; if(!w._reopened)w.end=Date.now(); delete w._reopened; w.entries=w.entries.filter(en=>en.sets.length);
   const prs=w.entries.flatMap(en=>en.sets.filter(s=>isPR(en.exId,s,w)).map(()=>ex(en.exId).name));
-  S.workouts.push(w); S.active=null; stopRest(); save();
+  S.workouts.push(w); S.active=null; stopRest(); releaseWake(); save();
   sheet(`<div class="eyebrow">Training beendet</div><h2 style="font-size:28px">Stark, ${S.settings.name||'gut gemacht'}! 💪</h2>
    <div class="tiles"><div class="tile"><div class="v num">${durationMin(w)}</div><div class="l">Minuten</div></div><div class="tile"><div class="v num">${workoutSets(w)}</div><div class="l">Sätze</div></div><div class="tile"><div class="v num">${fmtN(workoutVolume(w))}</div><div class="l">kg bewegt</div></div></div>
    ${prs.length?`<div class="insight">🔥 Neue Rekorde: ${[...new Set(prs)].map(esc).join(', ')}</div>`:''}
    ${avgRpe(w)?`<p class="muted small" style="margin:0">Durchschnittliches RPE: <b class="num">${avgRpe(w).toFixed(1)}</b>${avgRpe(w)>9?' – ganz schön am Limit. Technik vor Gewicht!':avgRpe(w)<6.5?' – da wäre noch Luft gewesen.':' – gut dosiert.'}</p>`:''}
    <button class="btn primary block" id="ok">Fertig</button>`,root=>root.querySelector('#ok').addEventListener('click',()=>{closeSheet();tab='history';render();}));
 }
-/* Pausen-Timer */
-function startRest(){stopRest();const total=S.settings.rest||90;if(!total)return;let left=total;const el=$('#rest');el.hidden=false;el.classList.remove('over');document.body.classList.add('resting');
-  const draw=()=>{el.innerHTML=`<div class="t num">${left>=0?fmtMMSS(left):'+'+fmtMMSS(-left)}</div><div class="bar"><i style="width:${Math.max(0,Math.min(100,left/total*100))}%"></i></div><button class="btn sm" id="rest-add">+30</button><button class="btn sm ghost" id="rest-x" aria-label="Timer schließen">✕</button>`;
-    el.querySelector('#rest-add').addEventListener('click',()=>{left+=30;draw();});el.querySelector('#rest-x').addEventListener('click',stopRest);};
-  draw();restTimer=setInterval(()=>{left--;if(left===0){el.classList.add('over');if(navigator.vibrate)navigator.vibrate([200,100,200]);}if(left<-120)return stopRest();draw();},1000);}
-function stopRest(){clearInterval(restTimer);restTimer=null;const el=$('#rest');if(el)el.hidden=true;document.body.classList.remove('resting');}
+/* Pausen-Timer – rechnet mit einem Endzeitpunkt, damit er nach Sperren/Minimieren korrekt weiterläuft */
+let restEnd=null, restTotal=0, restBeeped=false;
+function startRest(){stopRest();const total=S.settings.rest||90;if(!total)return;restTotal=total;restEnd=Date.now()+total*1000;restBeeped=false;if(S.active){S.active.restEnd=restEnd;S.active.restTotal=total;save();}
+  unlockAudio();keepAwake();drawRest();restTimer=setInterval(tickRest,500);}
+function resumeRest(){ // nach Neustart der App: laufenden Timer wiederherstellen
+  if(S.active&&S.active.restEnd&&Date.now()-S.active.restEnd<120000){restEnd=S.active.restEnd;restTotal=S.active.restTotal||S.settings.rest||90;restBeeped=restEnd<=Date.now();drawRest();restTimer=setInterval(tickRest,500);}}
+function tickRest(){if(!restEnd)return;const left=Math.round((restEnd-Date.now())/1000);
+  if(left<=0&&!restBeeped){restBeeped=true;playBeep();}
+  if(left<-120)return stopRest();drawRest();}
+function drawRest(){const el=$('#rest');if(!el||!restEnd)return;const left=Math.round((restEnd-Date.now())/1000);el.hidden=false;document.body.classList.add('resting');el.classList.toggle('over',left<=0);
+  el.innerHTML=`<div class="t num">${left>=0?fmtMMSS(left):'+'+fmtMMSS(-left)}</div><div class="bar"><i style="width:${Math.max(0,Math.min(100,left/restTotal*100))}%"></i></div><button class="btn sm" id="rest-add">+30</button><button class="btn sm ghost" id="rest-x" aria-label="Timer schließen">✕</button>`;
+  el.querySelector('#rest-add').addEventListener('click',()=>{restEnd+=30000;restBeeped=false;if(S.active){S.active.restEnd=restEnd;save();}drawRest();});el.querySelector('#rest-x').addEventListener('click',stopRest);}
+function stopRest(){clearInterval(restTimer);restTimer=null;restEnd=null;if(S.active&&S.active.restEnd){delete S.active.restEnd;save();}const el=$('#rest');if(el)el.hidden=true;document.body.classList.remove('resting');}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(restEnd)tickRest();if(S.active)keepAwake();const d=$('#dur');if(d&&S.active&&!S.active._reopened)d.textContent=elapsed(S.active.start);}});
+
+/* Ton: Web Audio, beim Antippen freigeschaltet (iOS verlangt eine Berührung, bevor eine Seite Töne spielen darf) */
+let actx=null;
+function unlockAudio(){try{if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();
+  if(navigator.audioSession&&navigator.audioSession.type!=='transient')navigator.audioSession.type='transient';}catch(e){}}
+function playBeep(){if(S.settings.sound===false)return;if(navigator.vibrate)navigator.vibrate([200,100,200,100,400]);
+  try{unlockAudio();if(!actx)return;const t0=actx.currentTime;const notes=[[880,0,.12],[880,.18,.12],[880,.36,.12],[1175,.6,.35]];
+    for(const [f,at,dur] of notes){const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(0,t0+at);g.gain.linearRampToValueAtTime(.25,t0+at+.01);g.gain.setValueAtTime(.25,t0+at+dur-.03);g.gain.linearRampToValueAtTime(0,t0+at+dur);o.connect(g).connect(actx.destination);o.start(t0+at);o.stop(t0+at+dur+.02);}}catch(e){}}
+
+/* Bildschirm wach halten, solange ein Training läuft */
+let wakeLock=null;
+async function keepAwake(){if(S.settings.awake===false||!('wakeLock' in navigator)||document.visibilityState!=='visible')return;try{if(wakeLock&&!wakeLock.released)return;wakeLock=await navigator.wakeLock.request('screen');wakeLock.addEventListener('release',()=>{wakeLock=null;});}catch(e){}}
+function releaseWake(){try{if(wakeLock)wakeLock.release();}catch(e){}wakeLock=null;}
 const fmtMMSS=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
 
 /* ========= Verlauf ========= */
@@ -603,6 +624,8 @@ function renderMore(){
    <section class="card stack"><h3>Einstellungen</h3>
      <div class="field"><label for="s-name">Dein Name (optional)</label><input class="input" id="s-name" value="${esc(S.settings.name)}" placeholder="z. B. Jonas" autocomplete="off"></div>
      <div class="field"><label>Pause zwischen Sätzen</label><div class="seg" id="s-rest">${[0,60,90,120,180].map(v=>`<button data-v="${v}" class="${S.settings.rest===v?'on':''}">${v?v+' s':'aus'}</button>`).join('')}</div></div>
+     <div class="field"><label>Ton am Ende der Pause</label><div class="seg" id="s-sound"><button data-v="1" class="${S.settings.sound!==false?'on':''}">An</button><button data-v="0" class="${S.settings.sound===false?'on':''}">Aus</button></div><button class="btn sm ghost" id="s-testsound" style="align-self:flex-start">Ton testen</button></div>
+     <div class="field"><label>Bildschirm während des Trainings anlassen</label><div class="seg" id="s-awake"><button data-v="1" class="${S.settings.awake!==false?'on':''}">An</button><button data-v="0" class="${S.settings.awake===false?'on':''}">Aus</button></div><div class="small muted">Ein gesperrtes Handy kann keinen Timer-Ton abspielen. Deshalb bleibt der Bildschirm an, solange ein Training läuft. Wird das Handy trotzdem gesperrt, rechnet der Timer beim Entsperren die Restzeit nach.</div></div>
      <div class="field"><label>Gewichtsschritt</label><div class="seg" id="s-step">${[1.25,2.5].map(v=>`<button data-v="${v}" class="${S.settings.step===v?'on':''}">± ${v.toLocaleString('de-DE')} kg</button>`).join('')}</div></div></section>
    <section class="card stack"><div class="row between"><h3>Übungen</h3><button class="btn sm" id="newex">+ Neue Übung</button></div>
      <div class="list">${S.exercises.map(e=>`<div class="it"><span>${esc(e.name)} <span class="small muted">${e.en&&e.en!==e.name?esc(e.en):''}</span></span><span class="row"><span class="tag">${{w:'kg',bw:'Körpergewicht',t:'Zeit'}[e.type]}</span>${e.custom?`<button class="small muted" data-delex="${e.id}" aria-label="Übung löschen">✕</button>`:''}</span></div>`).join('')}</div></section>
@@ -619,6 +642,9 @@ function renderMore(){
   $('#s-name').addEventListener('input',e=>{S.settings.name=e.target.value.trim();save();});
   $('#s-rest').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.rest=+b.dataset.v;save();renderMore();}));
   $('#s-step').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.step=+b.dataset.v;save();renderMore();}));
+  $('#s-sound').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.sound=b.dataset.v==='1';save();renderMore();}));
+  $('#s-testsound').addEventListener('click',()=>{unlockAudio();setTimeout(playBeep,50);});
+  $('#s-awake').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{S.settings.awake=b.dataset.v==='1';save();if(!S.settings.awake)releaseWake();renderMore();}));
   $('#newex').addEventListener('click',()=>newExerciseSheet('',()=>renderMore()));
   main.querySelectorAll('[data-delex]').forEach(b=>b.addEventListener('click',()=>{const e=ex(b.dataset.delex);const used=S.workouts.some(w=>w.entries.some(en=>en.exId===e.id));confirmSheet('Übung löschen?',used?e.name+' kommt in gespeicherten Trainings vor und wird dort als „Unbekannt" angezeigt.':e.name+' wird aus der Liste entfernt.','Löschen',()=>{S.exercises=S.exercises.filter(x=>x.id!==e.id);save();renderMore();});}));
   $('#exp').addEventListener('click',exportData);
