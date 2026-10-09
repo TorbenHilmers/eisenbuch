@@ -490,6 +490,11 @@ const SOUNDS=[
  {id:'whistle',name:'Trillerpfeife', desc:'Kurz und durchdringend'},
  {id:'arcade', name:'Arcade',        desc:'Aufsteigende Tonfolge'},
  {id:'siren',  name:'Sirene',        desc:'Zwei Wechseltöne'},
+ {id:'bowl',   name:'Klangschale',   desc:'Tiefer, lang ausklingender Ton',calm:true},
+ {id:'chime',  name:'Windspiel',     desc:'Sanfte, hohe Klänge nacheinander',calm:true},
+ {id:'harp',   name:'Harfe',         desc:'Langsam aufsteigendes Arpeggio',calm:true},
+ {id:'gong',   name:'Gong',          desc:'Ein Schlag, lange Ausklang',calm:true},
+ {id:'chord',  name:'Akkord',        desc:'Weicher Dreiklang, schwillt an und ab',calm:true},
 ];
 function tone(t0,{f,at=0,dur=.2,type='sine',vol=.25,f2=null,decay=false}){const o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.setValueAtTime(f,t0+at);if(f2!=null)o.frequency.exponentialRampToValueAtTime(f2,t0+at+dur);
   g.gain.setValueAtTime(0,t0+at);g.gain.linearRampToValueAtTime(vol,t0+at+.01);if(decay)g.gain.exponentialRampToValueAtTime(.001,t0+at+dur);else{g.gain.setValueAtTime(vol,t0+at+dur-.03);g.gain.linearRampToValueAtTime(0,t0+at+dur);}
@@ -501,6 +506,11 @@ function playSound(id){try{unlockAudio();if(!actx)return;const t0=actx.currentTi
     case 'buzzer': tone(t0,{f:140,dur:.7,type:'sawtooth',vol:.22});tone(t0,{f:141.5,dur:.7,type:'square',vol:.08}); break;
     case 'whistle': for(const at of [0,.3]){tone(t0,{f:2600,at,dur:.22,vol:.22});tone(t0,{f:2635,at,dur:.22,vol:.1});} break;
     case 'arcade': [523,659,784,1047].forEach((f,i)=>tone(t0,{f,at:i*.11,dur:.1,type:'square',vol:.18}));tone(t0,{f:1319,at:.46,dur:.4,type:'square',vol:.2,decay:true}); break;
+    case 'bowl': for(const [f,v] of [[220,.3],[220*2.0,.12],[220*2.98,.08],[220*4.2,.04]])tone(t0,{f,dur:4.5,vol:v,decay:true});tone(t0,{f:221.5,dur:4.5,vol:.12,decay:true}); break;
+    case 'chime': [1319,1760,1568,2093,1760].forEach((f,i)=>{tone(t0,{f,at:i*.45,dur:2.2,vol:.14,decay:true});tone(t0,{f:f*2.0,at:i*.45,dur:1,vol:.03,decay:true});}); break;
+    case 'harp': [262,330,392,523,659,784,1047].forEach((f,i)=>{tone(t0,{f,at:i*.28,dur:2.4,vol:.16,type:'triangle',decay:true});}); break;
+    case 'gong': for(const [f,v] of [[110,.3],[165,.14],[247,.1],[330,.06],[412,.05],[523,.03]])tone(t0,{f,dur:5,vol:v,decay:true});tone(t0,{f:111.3,dur:5,vol:.1,decay:true}); break;
+    case 'chord': for(const f of [262,330,392,523]){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(.11,t0+1.2);g.gain.setValueAtTime(.11,t0+2);g.gain.linearRampToValueAtTime(0,t0+3.6);o.connect(g).connect(actx.destination);o.start(t0);o.stop(t0+3.7);} break;
     case 'siren': [0,.4,.8].forEach(at=>{tone(t0,{f:700,at,dur:.2,type:'triangle',vol:.3});tone(t0,{f:1000,at:at+.2,dur:.2,type:'triangle',vol:.3});}); break;
     default: [[880,0,.12],[880,.18,.12],[880,.36,.12],[1175,.6,.35]].forEach(([f,at,dur])=>tone(t0,{f,at,dur,type:'square',vol:.25}));
   }}catch(e){}}
@@ -645,7 +655,7 @@ function renderMore(){
      <div class="field"><label for="s-name">Dein Name (optional)</label><input class="input" id="s-name" value="${esc(S.settings.name)}" placeholder="z. B. Jonas" autocomplete="off"></div>
      <div class="field"><label>Pause zwischen Sätzen</label><div class="seg" id="s-rest">${[0,60,90,120,180].map(v=>`<button data-v="${v}" class="${S.settings.rest===v?'on':''}">${v?v+' s':'aus'}</button>`).join('')}</div></div>
      <div class="field"><label>Ton am Ende der Pause</label><div class="seg" id="s-sound"><button data-v="1" class="${S.settings.sound!==false?'on':''}">An</button><button data-v="0" class="${S.settings.sound===false?'on':''}">Aus</button></div>
-       <div class="list" id="s-sounds" style="margin-top:4px">${SOUNDS.map(x=>`<div class="it" style="padding:9px 0"><button data-pickSound="${x.id}" style="flex:1;text-align:left;display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:50%;border:2px solid ${(S.settings.soundId||'beep')===x.id?'var(--accent)':'var(--line)'};display:inline-flex;align-items:center;justify-content:center;flex:none">${(S.settings.soundId||'beep')===x.id?'<span style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></span>':''}</span><span><span style="font-weight:600">${x.name}</span><br><span class="small muted">${x.desc}</span></span></button><button class="btn sm ghost" data-playSound="${x.id}" aria-label="${x.name} anhören">▶</button></div>`).join('')}</div></div>
+       <div class="list" id="s-sounds" style="margin-top:4px">${SOUNDS.map((x,i)=>`${i===0?'<div class="eyebrow" style="padding:6px 0 2px">Knackig</div>':x.calm&&!SOUNDS[i-1].calm?'<div class="eyebrow" style="padding:14px 0 2px">Ruhig &amp; lang</div>':''}<div class="it" style="padding:9px 0"><button data-pickSound="${x.id}" style="flex:1;text-align:left;display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:50%;border:2px solid ${(S.settings.soundId||'beep')===x.id?'var(--accent)':'var(--line)'};display:inline-flex;align-items:center;justify-content:center;flex:none">${(S.settings.soundId||'beep')===x.id?'<span style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></span>':''}</span><span><span style="font-weight:600">${x.name}</span><br><span class="small muted">${x.desc}</span></span></button><button class="btn sm ghost" data-playSound="${x.id}" aria-label="${x.name} anhören">▶</button></div>`).join('')}</div></div>
      <div class="field"><label>Bildschirm während des Trainings anlassen</label><div class="seg" id="s-awake"><button data-v="1" class="${S.settings.awake!==false?'on':''}">An</button><button data-v="0" class="${S.settings.awake===false?'on':''}">Aus</button></div><div class="small muted">Ein gesperrtes Handy kann keinen Timer-Ton abspielen. Deshalb bleibt der Bildschirm an, solange ein Training läuft. Wird das Handy trotzdem gesperrt, rechnet der Timer beim Entsperren die Restzeit nach.</div></div>
      <div class="field"><label>Gewichtsschritt</label><div class="seg" id="s-step">${[1.25,2.5].map(v=>`<button data-v="${v}" class="${S.settings.step===v?'on':''}">± ${v.toLocaleString('de-DE')} kg</button>`).join('')}</div></div></section>
    <section class="card stack"><div class="row between"><h3>Übungen</h3><button class="btn sm" id="newex">+ Neue Übung</button></div>
